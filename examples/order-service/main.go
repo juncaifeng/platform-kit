@@ -8,8 +8,8 @@
 // 不需要关注:
 // - 健康检查 (/health, /ready)
 // - 监控指标 (/metrics)
-// - 服务注册
-// - 优雅停止
+// - 服务注册（自动完成）
+// - 优雅停止（自动处理）
 package main
 
 import (
@@ -23,6 +23,7 @@ import (
 	"github.com/juncaifeng/platform-kit/kit/app"
 	"github.com/juncaifeng/platform-kit/kit/config"
 	"github.com/juncaifeng/platform-kit/kit/event"
+	"github.com/juncaifeng/platform-kit/kit/registry"
 	httpTransport "github.com/juncaifeng/platform-kit/kit/transport/http"
 )
 
@@ -34,7 +35,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 2. 创建事件发布器
+	// 2. 创建注册中心
+	reg, err := registry.NewRegistry(registry.RegistryConfig{
+		Type: cfg.Registry.Type,
+		Consul: &registry.ConsulConfig{
+			Address: cfg.Registry.Address,
+		},
+	})
+	if err != nil {
+		slog.Error("failed to create registry", "error", err)
+		os.Exit(1)
+	}
+
+	// 3. 创建事件发布器
 	eventPub, err := event.NewPublisher(event.EventBusConfig{
 		Type: cfg.EventBus.Type,
 		NATS: &event.NATSConfig{
@@ -47,18 +60,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 3. 创建应用
+	// 4. 创建应用（Kit 自动处理注册、健康检查、优雅停止）
 	application := app.New(
 		app.WithConfig(cfg),
 		app.WithHTTPServer(":8080"),
+		app.WithRegistry(reg),         // 👈 传入注册中心
 		app.WithEventPublisher(eventPub),
 	)
 
-	// 4. 注册业务路由（开发者只需关注这部分）
+	// 5. 注册业务路由（开发者只需关注这部分）
 	httpServer := application.HTTPServer()
 	registerRoutes(httpServer, eventPub)
 
-	// 5. 运行应用（Kit 自动处理健康检查、优雅停止等）
+	// 6. 运行应用
+	// Kit 自动完成:
+	// - 注册服务到 Consul
+	// - 启动心跳
+	// - 注册 /health, /ready, /metrics 端点
+	// - 等待 SIGTERM 信号
+	// - 注销服务
+	// - 优雅停止
 	if err := application.Run(context.Background()); err != nil {
 		slog.Error("application error", "error", err)
 		os.Exit(1)
@@ -67,12 +88,10 @@ func main() {
 
 // registerRoutes 注册业务路由
 func registerRoutes(server *httpTransport.Server, eventPub event.Publisher) {
-	// 创建 Handler
 	orderHandler := &OrderHandler{
 		eventPub: eventPub,
 	}
 
-	// 注册路由
 	server.HandleFunc("POST /api/v1/orders", orderHandler.CreateOrder)
 	server.HandleFunc("GET /api/v1/orders/{id}", orderHandler.GetOrder)
 }
@@ -108,15 +127,14 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	// 发布事件（不关心底层是 NATS 还是 Kafka）
 	eventData, _ := json.Marshal(map[string]interface{}{
-		"order_id":    orderID,
-		"product_id":  req.ProductID,
-		"quantity":    req.Quantity,
-		"amount":      req.Amount,
+		"order_id":   orderID,
+		"product_id": req.ProductID,
+		"quantity":   req.Quantity,
+		"amount":     req.Amount,
 	})
 
 	if err := h.eventPub.Publish(r.Context(), "order.created.v1", eventData); err != nil {
 		slog.Error("failed to publish event", "error", err)
-		// 不影响主流程，记录日志即可
 	}
 
 	// 返回响应
@@ -132,7 +150,6 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 func (h *OrderHandler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	orderID := r.PathValue("id")
 
-	// 业务逻辑：查询订单
 	order := map[string]interface{}{
 		"order_id": orderID,
 		"status":   "created",
