@@ -1,0 +1,42 @@
+# order-service 服务模板
+# 开发者定义服务本质属性
+
+apiVersion: platform.io/v1
+kind: ServiceTemplate
+metadata:
+  name: order-service
+  labels:
+    domain: order
+    team: commerce
+
+spec:
+  service:
+    type: sync
+    protocol: http
+    port: 8080
+
+  events:
+    produced:
+      - order.created.v1
+      - order.cancelled.v1
+    consumed:
+      - payment.success.v1
+
+  standardEndpoints:
+    health:
+      path: /health
+      method: GET
+      expose: true
+    readiness:
+      path: /ready
+      method: GET
+      expose: false
+    metrics:
+      path: /metrics
+      method: GET
+      format: prometheus
+      expose: false
+
+  gateway:
+    exposed: true
+    prefix: /api/v1/order

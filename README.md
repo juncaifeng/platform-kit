@@ -1,29 +1,170 @@
 # Platform Kit
 
-微服务平台工具包 - 整合服务注册和标准 SDK。
-
-## 核心特性
-
-- **基础镜像模式**：业务服务基于平台基础镜像构建，自动获得注册能力
-- **后台注册服务**：registerd 以后台守护进程方式运行，不影响业务服务
-- **标准健康检查**：内置健康检查 SDK，统一 `/health` 和 `/ready` 接口
-- **零侵入**：业务服务无需关心注册逻辑，只需实现健康检查接口
+微服务平台工具包 - 三层架构（Infra / Kit / Dev）
 
 ## 架构设计
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    业务服务容器                          │
-├─────────────────────────────────────────────────────────┤
-│  entrypoint (PID 1)                                     │
-│    ├── registerd (后台进程)                              │
-│    │     ├── 注册到 Consul                              │
-│    │     └── 心跳维护                                   │
-│    └── demo-service (业务进程)                           │
-│          ├── /health (健康检查)                          │
-│          └── /api/v1/demo (业务接口)                     │
+│                    Dev 业务开发层                        │
+│  业务 Handler、领域模型、业务规则                        │
+│  开发者只写业务代码，不感知基础设施                       │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          │ go get 引入
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                    Kit 脚手架层                          │
+│  ├── app/          应用启动框架                         │
+│  ├── config/       配置加载                             │
+│  ├── event/        事件封装（NATS/Kafka）               │
+│  ├── registry/     服务注册（Consul/CloudMap/K8s）      │
+│  └── transport/    传输层（HTTP/gRPC）                  │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          │ 自动处理
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                    Infra 基础设施层                      │
+│  APISIX 网关、Consul、NATS、服务注册同步器、CI/CD       │
+│  运维管理，服务无感知                                    │
 └─────────────────────────────────────────────────────────┘
 ```
+
+## 核心特性
+
+- **插件化架构**：组件可替换（NATS→Kafka、Consul→CloudMap）
+- **配置驱动**：切换组件只需改配置，业务代码零改动
+- **标准接口**：`/health`、`/ready`、`/metrics` 自动实现
+- **优雅停止**：SIGTERM 信号自动处理
+- **事件封装**：统一的事件发布/消费接口
+
+## 业务开发者使用
+
+### 第一步：引入依赖
+
+```bash
+go get github.com/juncaifeng/platform-kit/kit@v1.0.1
+```
+
+### 第二步：编写业务代码
+
+```go
+package main
+
+import (
+    "context"
+    "github.com/juncaifeng/platform-kit/kit/app"
+    "github.com/juncaifeng/platform-kit/kit/config"
+    "github.com/juncaifeng/platform-kit/kit/event"
+    httpTransport "github.com/juncaifeng/platform-kit/kit/transport/http"
+)
+
+func main() {
+    // 1. 加载配置
+    cfg, _ := config.Load("")
+
+    // 2. 创建事件发布器
+    eventPub, _ := event.NewPublisher(event.EventBusConfig{
+        Type: cfg.EventBus.Type,
+        NATS: &event.NATSConfig{Address: cfg.EventBus.NATS.Address},
+    })
+
+    // 3. 创建应用
+    app := app.New(
+        app.WithConfig(cfg),
+        app.WithHTTPServer(":8080"),
+        app.WithEventPublisher(eventPub),
+    )
+
+    // 4. 注册业务路由
+    httpServer := app.HTTPServer()
+    httpServer.HandleFunc("POST /api/v1/orders", createOrderHandler)
+
+    // 5. 运行（Kit 自动处理健康检查、优雅停止）
+    app.Run(context.Background())
+}
+```
+
+### 第三步：配置环境变量
+
+```bash
+# 服务配置
+SERVICE_NAME=order-service
+SERVICE_PORT=8080
+
+# 注册中心（可选切换）
+REGISTRY_TYPE=consul          # consul / cloudmap / k8s-service
+REGISTRY_ADDR=consul:8500
+
+# 事件总线（可选切换）
+EVENT_BUS_TYPE=nats           # nats / kafka
+NATS_ADDRESS=nats://nats:4222
+```
+
+## Kit 能力清单
+
+| 能力 | 说明 | 开发者感知 |
+|------|------|-----------|
+| 标准接口 | `/health`、`/ready`、`/metrics` 自动实现 | ❌ 无需编写 |
+| 优雅停止 | SIGTERM 信号自动处理 | ❌ 无需编写 |
+| 事件封装 | 统一的发布/消费接口 | ✅ 调用 SDK |
+| 服务注册 | 自动注册到注册中心 | ❌ 无需编写 |
+| 配置加载 | YAML + 环境变量 | ❌ 自动加载 |
+
+## 组件切换
+
+只需修改配置，业务代码零改动：
+
+```yaml
+# 切换事件总线：NATS → Kafka
+eventBus:
+  type: kafka
+  kafka:
+    brokers: ["kafka:9092"]
+
+# 切换注册中心：Consul → Cloud Map
+registry:
+  type: cloudmap
+  cloudmap:
+    namespace: prod.internal
+    region: ap-northeast-1
+```
+
+## 项目结构
+
+```
+platform-kit/
+├── kit/                        # 🆕 脚手架实现层
+│   ├── app/                   # 应用启动框架
+│   ├── config/                # 配置加载
+│   ├── event/                 # 事件封装
+│   │   ├── event.go           # 接口定义
+│   │   ├── nats.go            # NATS 实现
+│   │   └── kafka.go           # Kafka 实现（占位）
+│   ├── registry/              # 服务注册
+│   │   ├── registry.go        # 接口定义
+│   │   ├── consul.go          # Consul 实现
+│   │   ├── cloudmap.go        # Cloud Map 实现（占位）
+│   │   └── k8s.go             # K8s 实现
+│   ├── transport/             # 传输层
+│   │   └── http/              # HTTP 服务器
+│   └── middleware/            # 中间件
+├── sdk/                        # 契约层（Proto/OpenAPI）
+├── cmd/                        # 基础镜像
+│   ├── registerd/             # 后台注册守护进程
+│   └── entrypoint/            # 入口包装器
+├── examples/                   # 示例服务
+│   └── order-service/         # 订单服务示例
+└── Dockerfile.base             # 基础镜像
+```
+
+## 设计原则
+
+1. **接口抽象**：所有组件通过接口定义，支持插件化替换
+2. **配置驱动**：切换组件只需改配置，业务代码零改动
+3. **约定优于配置**：合理的默认值，开箱即用
+4. **关注点分离**：开发写业务，运维改配置，平台维护 Kit
 
 ## 快速开始
 
