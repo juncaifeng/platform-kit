@@ -67,14 +67,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
+          # 强制添加 generated 文件（忽略 .gitignore）
+          git add -f sdk/generated/
+          
           # 检查是否有变更
-          if git diff --quiet sdk/generated/; then
+          if git diff --cached --quiet; then
             echo "No changes to generated SDK"
             exit 0
           fi
           
           # 提交到 sdk 分支
           git checkout -B sdk
-          git add sdk/generated/
           git commit -m "chore: regenerate SDK from proto [skip ci]"
           git push origin sdk --force
