@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/your-org/platform-kit/internal/config"
-	"github.com/your-org/platform-kit/internal/registry"
+	"github.com/juncaifeng/platform-kit/internal/config"
+	"github.com/juncaifeng/platform-kit/internal/registry"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/api"
-	"github.com/your-org/platform-kit/internal/config"
+	"github.com/juncaifeng/platform-kit/internal/config"
 )
 
 type ConsulRegistry struct {

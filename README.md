@@ -77,10 +77,7 @@ docker-compose up -d
 
 ```bash
 # 公开仓库
-go get github.com/your-org/platform-kit@v1.0.0
-
-# 私有仓库需要配置
-go env -w GOPRIVATE=github.com/your-org/*
+go get github.com/juncaifeng/platform-kit@v1.0.0
 ```
 
 ### 标准接口规范
@@ -118,21 +115,21 @@ package main
 import (
     "net/http"
 
-    "github.com/your-org/platform-kit/sdk/go/metrics"
+    metricsv1 "github.com/juncaifeng/platform-kit/sdk/generated/go/metrics/v1"
     "github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
     // 初始化指标
-    m := metrics.New("myapp")
+    m := metricsv1.New("myapp")
     m.Register()
-    metrics.CollectRuntimeMetrics()
+    metricsv1.CollectRuntimeMetrics()
 
     // 注册 /metrics 端点
     http.Handle("/metrics", promhttp.Handler())
 
     // 使用指标中间件
-    handler := metrics.HTTPMiddleware(m)(http.DefaultServeMux)
+    handler := metricsv1.HTTPMiddleware(m)(http.DefaultServeMux)
 
     http.ListenAndServe(":8080", handler)
 }
@@ -146,7 +143,7 @@ package main
 import (
     "net/http"
 
-    "github.com/your-org/platform-kit/internal/health"
+    "github.com/juncaifeng/platform-kit/internal/health"
 )
 
 func main() {
@@ -257,7 +254,7 @@ git tag v1.0.0
 git push origin v1.0.0
 
 # 3. 业务服务引入
-go get github.com/your-org/platform-kit@v1.0.0
+go get github.com/juncaifeng/platform-kit@v1.0.0
 ```
 
 ### 版本管理
@@ -267,16 +264,6 @@ go get github.com/your-org/platform-kit@v1.0.0
 | `v1.x.x` | 稳定版本，向后兼容 |
 | `v0.x.x` | 开发中版本，可能有破坏性变更 |
 | `v2.x.x` | 下一个大版本 |
-
-### 私有仓库配置
-
-```bash
-# 设置私有模块
-go env -w GOPRIVATE=github.com/your-org/*
-
-# 配置 Git 访问
-git config --global url."git@github.com:".insteadOf "https://github.com/"
-```
 
 ## 设计原则
 

@@ -1,4 +1,4 @@
-module github.com/your-org/platform-kit
+module github.com/juncaifeng/platform-kit
 
 go 1.26
 
