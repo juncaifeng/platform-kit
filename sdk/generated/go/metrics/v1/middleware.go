@@ -1,4 +1,4 @@
-package metrics
+package metricsv1
 
 import (
 	"net/http"

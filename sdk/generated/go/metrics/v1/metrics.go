@@ -1,4 +1,4 @@
-// Package metrics 提供 Prometheus 指标定义和 /metrics 端点
+// Package metricsv1 提供 Prometheus 指标定义和 /metrics 端点
 //
 // 规范要求的指标:
 //   - {prefix}_http_requests_total         Counter   HTTP 请求总数（按 method, status, path）
@@ -13,11 +13,10 @@
 //   - {prefix}_registry_heartbeat_duration_seconds Histogram 注册中心心跳耗时
 //   - go_goroutines                        Gauge     Go 协程数
 //   - go_memstats_alloc_bytes              Gauge     内存分配
-package metrics
+package metricsv1
 
 import (
 	"net/http"
-	"runtime"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -26,11 +25,11 @@ import (
 // Metrics 包含所有规范定义的指标
 type Metrics struct {
 	// HTTP 指标
-	HTTPRequestsTotal    *prometheus.CounterVec
-	HTTPRequestDuration  *prometheus.HistogramVec
-	HTTPRequestSize      *prometheus.SummaryVec
-	HTTPResponseSize     *prometheus.SummaryVec
-	ActiveConnections    prometheus.Gauge
+	HTTPRequestsTotal       *prometheus.CounterVec
+	HTTPRequestDuration     *prometheus.HistogramVec
+	HTTPRequestSize         *prometheus.SummaryVec
+	HTTPResponseSize        *prometheus.SummaryVec
+	ActiveConnections       prometheus.Gauge
 
 	// 事件指标
 	EventPublishedTotal     *prometheus.CounterVec
@@ -159,9 +158,5 @@ func HandlerFunc() http.HandlerFunc {
 // CollectRuntimeMetrics 收集 Go 运行时指标
 // go_goroutines, go_memstats_alloc_bytes 等由 prometheus 自动收集
 func CollectRuntimeMetrics() {
-	// prometheus.NewGoCollector() 会自动收集:
-	// - go_goroutines
-	// - go_memstats_alloc_bytes
-	// - 其他 runtime 指标
 	prometheus.MustRegister(prometheus.NewGoCollector())
 }
