@@ -15,6 +15,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -35,7 +37,6 @@ jobs:
         run: |
           mkdir -p sdk/generated/go
           
-          # Generate health/v1
           protoc \
             --proto_path=sdk/proto \
             --go_out=sdk/generated/go \
@@ -44,7 +45,6 @@ jobs:
             --go-grpc_opt=paths=source_relative \
             sdk/proto/health/v1/health.proto
           
-          # Generate metrics/v1
           protoc \
             --proto_path=sdk/proto \
             --go_out=sdk/generated/go \
@@ -53,7 +53,6 @@ jobs:
             --go-grpc_opt=paths=source_relative \
             sdk/proto/metrics/v1/metrics.proto
           
-          # Generate service/v1
           protoc \
             --proto_path=sdk/proto \
             --go_out=sdk/generated/go \
@@ -62,12 +61,28 @@ jobs:
             --go-grpc_opt=paths=source_relative \
             sdk/proto/service/v1/service.proto
 
-      - name: Commit generated SDK
+      - name: Get version
+        id: version
+        run: |
+          # 获取最新 tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "current=$LATEST_TAG" >> $GITHUB_OUTPUT
+          
+          # 计算下一个 patch 版本
+          VERSION=${LATEST_TAG#v}
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+          echo "next=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit and tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 强制添加 generated 文件（忽略 .gitignore）
+          # 强制添加 generated 文件
           git add -f sdk/generated/
           
           # 检查是否有变更
@@ -78,5 +93,10 @@ jobs:
           
           # 提交到 sdk 分支
           git checkout -B sdk
-          git commit -m "chore: regenerate SDK from proto [skip ci]"
+          git commit -m "chore: regenerate SDK ${{ steps.version.outputs.next }} [skip ci]"
           git push origin sdk --force
+          
+          # 在 master 上打 tag
+          git checkout master
+          git tag ${{ steps.version.outputs.next }}
+          git push origin ${{ steps.version.outputs.next }}
