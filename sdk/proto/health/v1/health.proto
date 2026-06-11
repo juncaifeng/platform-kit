@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package platform.health.v1;
+
+option go_package = "github.com/your-org/platform-kit/sdk/generated/go/health/v1;healthv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// HealthService 健康检查服务
+service HealthService {
+  // Live 存活检查 - 进程是否活着
+  rpc Live(google.protobuf.Empty) returns (LiveResponse);
+  
+  // Ready 就绪检查 - 是否可以接收流量
+  rpc Ready(google.protobuf.Empty) returns (ReadyResponse);
+}
+
+// LiveResponse 存活检查响应
+message LiveResponse {
+  // 健康状态: healthy | unhealthy | degraded
+  string status = 1;
+  
+  // 检查时间
+  google.protobuf.Timestamp timestamp = 2;
+  
+  // 错误信息，key 为组件名
+  map<string, string> errors = 3;
+}
+
+// ReadyResponse 就绪检查响应
+message ReadyResponse {
+  // 是否就绪
+  bool ready = 1;
+  
+  // 检查时间
+  google.protobuf.Timestamp timestamp = 2;
+  
+  // 未就绪原因，key 为组件名
+  map<string, string> errors = 3;
+}

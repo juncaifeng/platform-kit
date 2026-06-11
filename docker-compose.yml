@@ -1,0 +1,49 @@
+services:
+  # ===========================================
+  # 平台基础镜像构建
+  # ===========================================
+  platform-kit:
+    build:
+      context: .
+      dockerfile: Dockerfile.base
+    image: platform-kit:latest
+
+  # ===========================================
+  # 示例服务（使用基础镜像）
+  # ===========================================
+  demo-service:
+    build: ./examples/demo-service
+    container_name: demo-service
+    ports:
+      - "8081:8080"
+    environment:
+      - SERVICE_NAME=demo-service
+      - SERVICE_PORT=8080
+      - REGISTER_MODE=daemon
+      - REGISTRY_TYPE=consul
+      - REGISTRY_ADDR=http://consul:8500
+      - HEALTH_CHECK_PATH=/health
+      - GATEWAY_EXPOSED=true
+      - GATEWAY_PREFIX=/api/v1/demo
+    depends_on:
+      - platform-kit
+      - consul
+    networks:
+      - platform-network
+
+  # ===========================================
+  # Consul（注册中心）
+  # ===========================================
+  consul:
+    image: hashicorp/consul:1.19
+    container_name: consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
+    networks:
+      - platform-network
+
+networks:
+  platform-network:
+    driver: bridge

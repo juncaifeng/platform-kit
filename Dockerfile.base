@@ -1,0 +1,26 @@
+FROM golang:1.26-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+# 编译 registerd
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/registerd ./cmd/registerd
+
+# 编译 entrypoint
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/entrypoint ./cmd/entrypoint
+
+FROM alpine:3.19
+
+RUN apk --no-cache add ca-certificates curl
+
+WORKDIR /app
+
+COPY --from=builder /app/registerd .
+COPY --from=builder /app/entrypoint .
+
+# 设置 entrypoint
+ENTRYPOINT ["/app/entrypoint"]

@@ -1,0 +1,276 @@
+openapi: 3.0.3
+info:
+  title: Platform Kit API
+  description: |
+    微服务平台 SDK 标准接口规范
+    
+    ## 标准接口
+    | 接口 | 用途 | 调用方 | 响应格式 | 是否必须 |
+    |------|------|--------|----------|----------|
+    | `/health` | 存活检查 | Consul / K8s / 负载均衡 | `{"status":"healthy"}` | 必须 |
+    | `/ready` | 就绪检查 | K8s / 滚动更新 | `{"ready":true}` | 必须 |
+    | `/metrics` | 监控指标 | Prometheus / 监控系统 | Prometheus 格式 | 必须 |
+    | `/debug/pprof` | 性能分析 | 开发/运维手动 | Go pprof 页面 | 可选 |
+    | `/config` | 配置查看 | 运维调试 | `{"config":{...}}` | 可选 |
+    
+    ## 指标列表
+    | 指标名 | 类型 | 说明 |
+    |--------|------|------|
+    | `{prefix}_http_requests_total` | Counter | HTTP 请求总数（按 method, status, path） |
+    | `{prefix}_http_request_duration_seconds` | Histogram | 请求耗时分布 |
+    | `{prefix}_http_request_size_bytes` | Summary | 请求体大小 |
+    | `{prefix}_http_response_size_bytes` | Summary | 响应体大小 |
+    | `{prefix}_active_connections` | Gauge | 当前活跃连接数 |
+    | `{prefix}_event_published_total` | Counter | 事件发布总数（按 subject） |
+    | `{prefix}_event_consumed_total` | Counter | 事件消费总数（按 subject） |
+    | `{prefix}_event_publish_duration_seconds` | Histogram | 事件发布耗时 |
+    | `{prefix}_event_consume_duration_seconds` | Histogram | 事件消费耗时 |
+    | `{prefix}_registry_heartbeat_duration_seconds` | Histogram | 注册中心心跳耗时 |
+    | `go_goroutines` | Gauge | Go 协程数（runtime 自带） |
+    | `go_memstats_alloc_bytes` | Gauge | 内存分配（runtime 自带） |
+    
+    ## 健康检查 vs 就绪检查
+    | | /health | /ready |
+    |---|---------|-------|
+    | 用途 | 进程是否活着 | 是否可以接收流量 |
+    | 失败处理 | 重启容器 | 从负载均衡移除 |
+    | 检查内容 | 进程 + 关键依赖 | 所有依赖就绪 |
+    | K8s 对应 | livenessProbe | readinessProbe |
+    
+    ## 服务注册
+    通过 gRPC 接口进行服务注册和心跳维护
+  version: 1.0.0
+  contact:
+    name: Platform Team
+    email: platform@example.com
+
+tags:
+  - name: health
+    description: 健康检查接口
+  - name: monitoring
+    description: 监控指标接口
+  - name: debug
+    description: 调试接口
+
+paths:
+  /health:
+    get:
+      summary: 存活检查
+      description: |
+        检查服务是否存活。
+        
+        **失败处理**: 重启容器
+        **K8s 配置**: `livenessProbe`
+      operationId: live
+      tags: [health]
+      responses:
+        '200':
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveResponse'
+              example:
+                status: healthy
+        '503':
+          description: 服务不健康
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveResponse'
+              example:
+                status: unhealthy
+                errors:
+                  database: "connection refused"
+
+  /ready:
+    get:
+      summary: 就绪检查
+      description: |
+        检查服务是否可以接收流量。
+        
+        **失败处理**: 从负载均衡移除
+        **K8s 配置**: `readinessProbe`
+      operationId: ready
+      tags: [health]
+      responses:
+        '200':
+          description: 服务就绪
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+              example:
+                ready: true
+        '503':
+          description: 服务未就绪
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+              example:
+                ready: false
+                errors:
+                  database: "connection refused"
+
+  /metrics:
+    get:
+      summary: 监控指标
+      description: 返回 Prometheus 格式的监控指标
+      operationId: getMetrics
+      tags: [monitoring]
+      responses:
+        '200':
+          description: Prometheus 指标
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP myapp_http_requests_total Total number of HTTP requests
+                  # TYPE myapp_http_requests_total counter
+                  myapp_http_requests_total{method="GET",status="200",path="/"} 100
+                  # HELP myapp_http_request_duration_seconds HTTP request duration in seconds
+                  # TYPE myapp_http_request_duration_seconds histogram
+                  myapp_http_request_duration_seconds_bucket{method="GET",path="/",le="0.005"} 50
+                  myapp_http_request_duration_seconds_bucket{method="GET",path="/",le="0.01"} 80
+                  myapp_http_request_duration_seconds_bucket{method="GET",path="/",le="+Inf"} 100
+                  myapp_http_request_duration_seconds_sum{method="GET",path="/"} 1.5
+                  myapp_http_request_duration_seconds_count{method="GET",path="/"} 100
+                  # HELP go_goroutines Number of goroutines that currently exist.
+                  # TYPE go_goroutines gauge
+                  go_goroutines 42
+                  # HELP go_memstats_alloc_bytes Number of bytes allocated and still in use.
+                  # TYPE go_memstats_alloc_bytes gauge
+                  go_memstats_alloc_bytes 1.048576e+07
+
+  /debug/pprof:
+    get:
+      summary: 性能分析入口
+      description: 返回 Go pprof 性能分析页面
+      operationId: pprofIndex
+      tags: [debug]
+      responses:
+        '200':
+          description: pprof 页面
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /debug/pprof/heap:
+    get:
+      summary: 堆内存分析
+      description: 返回堆内存 profile
+      operationId: pprofHeap
+      tags: [debug]
+      responses:
+        '200':
+          description: heap profile
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /debug/pprof/goroutine:
+    get:
+      summary: 协程分析
+      description: 返回所有协程的 stack trace
+      operationId: pprofGoroutine
+      tags: [debug]
+      responses:
+        '200':
+          description: goroutine profile
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /debug/pprof/profile:
+    get:
+      summary: CPU 分析
+      description: 返回 CPU profile（默认 30 秒）
+      operationId: pprofProfile
+      tags: [debug]
+      parameters:
+        - name: seconds
+          in: query
+          schema:
+            type: integer
+            default: 30
+          description: 采样时间（秒）
+      responses:
+        '200':
+          description: CPU profile
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /config:
+    get:
+      summary: 配置查看
+      description: 返回当前服务配置（仅用于调试）
+      operationId: getConfig
+      tags: [debug]
+      responses:
+        '200':
+          description: 服务配置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+              example:
+                service: my-service
+                version: 1.0.0
+                port: 8080
+
+components:
+  schemas:
+    LiveResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, degraded]
+          description: 健康状态
+        errors:
+          type: object
+          additionalProperties:
+            type: string
+          description: 错误信息，key 为组件名
+
+    ReadyResponse:
+      type: object
+      required: [ready]
+      properties:
+        ready:
+          type: boolean
+          description: 是否就绪
+        errors:
+          type: object
+          additionalProperties:
+            type: string
+          description: 未就绪原因，key 为组件名
+
+    ConfigResponse:
+      type: object
+      properties:
+        service:
+          type: string
+          description: 服务名称
+        version:
+          type: string
+          description: 服务版本
+        port:
+          type: integer
+          description: 监听端口
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: 服务元数据

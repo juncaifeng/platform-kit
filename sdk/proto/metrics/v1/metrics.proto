@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package platform.metrics.v1;
+
+option go_package = "github.com/your-org/platform-kit/sdk/generated/go/metrics/v1;metricsv1";
+
+import "google/protobuf/empty.proto";
+
+// MetricsService 监控指标服务
+service MetricsService {
+  // GetMetrics 获取 Prometheus 格式的指标
+  rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
+  
+  // GetServiceInfo 获取服务信息
+  rpc GetServiceInfo(google.protobuf.Empty) returns (ServiceInfoResponse);
+}
+
+// MetricsResponse 指标响应
+message MetricsResponse {
+  // Prometheus 格式的指标文本
+  string content = 1;
+  
+  // 内容类型
+  string content_type = 2;
+}
+
+// ServiceInfoResponse 服务信息响应
+message ServiceInfoResponse {
+  // 服务名称
+  string name = 1;
+  
+  // 服务版本
+  string version = 2;
+  
+  // 服务地址
+  string address = 3;
+  
+  // 服务端口
+  int32 port = 4;
+  
+  // 启动时间
+  string started_at = 5;
+  
+  // 服务元数据
+  map<string, string> metadata = 6;
+}

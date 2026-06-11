@@ -1,0 +1,14 @@
+version: v1
+name: buf.build/your-org/platform-kit
+deps:
+  - buf.build/googleapis/googleapis
+breaking:
+  use:
+    - FILE
+lint:
+  use:
+    - DEFAULT
+  except:
+    - UNARY_RPC
+    - COMMENT_FIELD
+    - PACKAGE_DIRECTORY_MATCH
