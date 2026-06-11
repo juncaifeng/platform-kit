@@ -76,8 +76,16 @@ docker-compose up -d
 ### 安装 SDK
 
 ```bash
-# 公开仓库
-go get github.com/juncaifeng/platform-kit@v1.0.0
+# 从 sdk 分支获取生成的代码
+go get github.com/juncaifeng/platform-kit/sdk/go/health/v1@sdk
+go get github.com/juncaifeng/platform-kit/sdk/go/metrics/v1@sdk
+go get github.com/juncaifeng/platform-kit/sdk/go/service/v1@sdk
+```
+
+### SDK 更新流程
+
+```
+修改 proto/openapi → 推送 master → CI 自动生成 → sdk 分支更新 → go get 获取最新
 ```
 
 ### 标准接口规范
