@@ -6,16 +6,13 @@ on:
     paths:
       - 'sdk/proto/**'
       - 'sdk/openapi/**'
-  pull_request:
-    branches: [master]
-    paths:
-      - 'sdk/proto/**'
-      - 'sdk/openapi/**'
   workflow_dispatch:
 
 jobs:
   generate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -65,39 +62,19 @@ jobs:
             --go-grpc_opt=paths=source_relative \
             sdk/proto/service/v1/service.proto
 
-      - name: Upload generated SDK
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdk-go
-          path: sdk/generated/go/
-
-  release:
-    needs: generate
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download generated SDK
-        uses: actions/download-artifact@v4
-        with:
-          name: sdk-go
-          path: sdk/generated/go/
-
-      - name: Get version
-        id: version
+      - name: Commit generated SDK
         run: |
-          VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          generate_release_notes: true
-          files: |
-            sdk/generated/go/**/*.go
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 检查是否有变更
+          if git diff --quiet sdk/generated/; then
+            echo "No changes to generated SDK"
+            exit 0
+          fi
+          
+          # 提交到 sdk 分支
+          git checkout -B sdk
+          git add sdk/generated/
+          git commit -m "chore: regenerate SDK from proto [skip ci]"
+          git push origin sdk --force
