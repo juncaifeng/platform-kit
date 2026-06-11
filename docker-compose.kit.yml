@@ -1,0 +1,57 @@
+services:
+  # Kit Sidecar（与业务服务一起部署）
+  order-service-kit:
+    build:
+      context: .
+      dockerfile: Dockerfile.kit
+    container_name: order-service-kit
+    environment:
+      - SERVICE_NAME=order-service
+      - SERVICE_PORT=8080
+      - REGISTRY_TYPE=consul
+      - REGISTRY_ADDR=http://consul:8500
+      - EVENT_BUS_TYPE=nats
+      - EVENT_BUS_ADDR=nats://nats:4222
+      - POD_IP=order-service
+    depends_on:
+      - consul
+      - nats
+    networks:
+      - platform-network
+
+  # 业务服务（可以是任何语言）
+  order-service:
+    build: ./examples/order-service
+    container_name: order-service
+    ports:
+      - "8081:8080"
+    environment:
+      - KIT_SIDECAR_ADDR=order-service-kit:9090
+    depends_on:
+      - order-service-kit
+    networks:
+      - platform-network
+
+  # Consul
+  consul:
+    image: hashicorp/consul:1.19
+    container_name: consul
+    ports:
+      - "8500:8500"
+    command: agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
+    networks:
+      - platform-network
+
+  # NATS
+  nats:
+    image: nats:latest
+    container_name: nats
+    ports:
+      - "4222:4222"
+    command: -js
+    networks:
+      - platform-network
+
+networks:
+  platform-network:
+    driver: bridge

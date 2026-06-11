@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package platform.kit.v1;
+
+option go_package = "github.com/juncaifeng/platform-kit/sdk/generated/go/kit/v1;kitv1";
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// KitService Kit Sidecar 服务接口
+// 业务进程通过此接口调用 Kit 的能力
+service KitService {
+  // 服务注册
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Deregister(DeregisterRequest) returns (DeregisterResponse);
+  
+  // 健康检查
+  rpc GetHealth(google.protobuf.Empty) returns (HealthResponse);
+  rpc GetReadiness(google.protobuf.Empty) returns (ReadinessResponse);
+  
+  // 事件
+  rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
+  rpc SubscribeEvent(SubscribeEventRequest) returns (stream EventMessage);
+  
+  // 指标
+  rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
+}
+
+// ========== 服务注册 ==========
+
+message RegisterRequest {
+  string service_name = 1;
+  string service_id = 2;
+  string address = 3;
+  int32 port = 4;
+  map<string, string> metadata = 5;
+}
+
+message RegisterResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message DeregisterRequest {
+  string service_id = 1;
+}
+
+message DeregisterResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// ========== 健康检查 ==========
+
+message HealthResponse {
+  string status = 1;  // healthy, unhealthy, degraded
+  google.protobuf.Timestamp timestamp = 2;
+  map<string, string> errors = 3;
+}
+
+message ReadinessResponse {
+  bool ready = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  map<string, string> errors = 3;
+}
+
+// ========== 事件 ==========
+
+message PublishEventRequest {
+  string subject = 1;
+  bytes data = 2;
+  map<string, string> headers = 3;
+}
+
+message PublishEventResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message SubscribeEventRequest {
+  string subject = 1;
+  string consumer_group = 2;
+}
+
+message EventMessage {
+  string subject = 1;
+  bytes data = 2;
+  map<string, string> headers = 3;
+  string message_id = 4;
+}
+
+// ========== 指标 ==========
+
+message MetricsResponse {
+  string content = 1;
+  string content_type = 2;
+}
