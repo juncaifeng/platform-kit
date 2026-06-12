@@ -2,20 +2,23 @@
 //
 // 作为独立进程运行，提供以下能力：
 // 1. 服务注册（Consul/CloudMap/K8s）
-// 2. 健康检查（/health, /ready）
-// 3. 事件发布/消费（NATS/Kafka）
-// 4. 指标采集（/metrics）
-// 5. gRPC API（供业务进程调用）
+// 2. 健康检查聚合（/health, /ready）
+// 3. 指标聚合（/metrics）
+// 4. 事件发布/消费（NATS/Kafka）
+// 5. 路由同步（APISIX）
+// 6. gRPC API（供业务进程调用）
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"google.golang.org/grpc"
@@ -23,6 +26,8 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/juncaifeng/platform-kit/internal/kit/event"
+	"github.com/juncaifeng/platform-kit/internal/kit/health"
+	"github.com/juncaifeng/platform-kit/internal/kit/metrics"
 	"github.com/juncaifeng/platform-kit/internal/kit/registry"
 )
 
@@ -64,11 +69,15 @@ func main() {
 	}
 	defer eventBus.Close()
 
+	// 创建聚合器
+	healthAgg := health.NewAggregator()
+	metricsAgg := metrics.NewAggregator()
+
 	// 启动 HTTP 服务器（健康检查 + 指标）
-	httpServer := startHTTPServer(cfg, reg)
+	httpServer := startHTTPServer(cfg, healthAgg, metricsAgg)
 
 	// 启动 gRPC 服务器
-	grpcServer := startGRPCServer(cfg, reg, eventBus)
+	grpcServer := startGRPCServer(cfg, reg, eventBus, healthAgg, metricsAgg)
 
 	// 注册服务
 	service := &registry.Service{
@@ -158,25 +167,45 @@ func loadConfig() *Config {
 	}
 }
 
-func startHTTPServer(cfg *Config, reg registry.Registry) *http.Server {
+func startHTTPServer(cfg *Config, healthAgg *health.Aggregator, metricsAgg *metrics.Aggregator) *http.Server {
 	mux := http.NewServeMux()
 
-	// 健康检查
+	// /health 存活检查（聚合所有服务的健康状态）
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		status, services := healthAgg.GetHealth()
+
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"healthy"}`))
+		if status != "healthy" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":   status,
+			"services": services,
+		})
 	})
 
-	// 就绪检查
+	// /ready 就绪检查（聚合所有服务的就绪状态）
 	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		ready, services := healthAgg.GetReadiness()
+
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ready":true}`))
+		if !ready {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ready":    ready,
+			"services": services,
+		})
 	})
 
-	// 指标
+	// /metrics 指标（Prometheus 格式）
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte("# Prometheus metrics placeholder\n"))
+		content := metricsAgg.GetMetrics()
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte(content))
 	})
 
 	server := &http.Server{
@@ -194,7 +223,7 @@ func startHTTPServer(cfg *Config, reg registry.Registry) *http.Server {
 	return server
 }
 
-func startGRPCServer(cfg *Config, reg registry.Registry, eventBus event.EventBus) *grpc.Server {
+func startGRPCServer(cfg *Config, reg registry.Registry, eventBus event.EventBus, healthAgg *health.Aggregator, metricsAgg *metrics.Aggregator) *grpc.Server {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.KitGRPCPort))
 	if err != nil {
 		slog.Error("failed to listen", "error", err)
@@ -209,8 +238,10 @@ func startGRPCServer(cfg *Config, reg registry.Registry, eventBus event.EventBus
 
 	// TODO: 注册 Kit 服务
 	// kitv1.RegisterKitServiceServer(grpcServer, &kitService{
-	//     registry: reg,
-	//     eventBus: eventBus,
+	//     registry:     reg,
+	//     eventBus:     eventBus,
+	//     healthAgg:    healthAgg,
+	//     metricsAgg:   metricsAgg,
 	// })
 
 	go func() {

@@ -10,23 +10,27 @@ import "google/protobuf/timestamp.proto";
 // KitService Kit Sidecar 服务接口
 // 业务进程通过此接口调用 Kit 的能力
 service KitService {
-  // 服务注册
+  // ========== 服务注册 ==========
   rpc Register(RegisterRequest) returns (RegisterResponse);
   rpc Deregister(DeregisterRequest) returns (DeregisterResponse);
-  
-  // 健康检查
+
+  // ========== 健康检查 ==========
+  // 业务服务上报健康状态，Kit Sidecar 聚合后暴露 /health, /ready
+  rpc ReportHealth(ReportHealthRequest) returns (ReportHealthResponse);
   rpc GetHealth(google.protobuf.Empty) returns (HealthResponse);
   rpc GetReadiness(google.protobuf.Empty) returns (ReadinessResponse);
-  
-  // 事件
+
+  // ========== 指标上报 ==========
+  // 业务服务上报指标，Kit Sidecar 聚合后暴露 /metrics（Prometheus 格式）
+  rpc ReportMetrics(ReportMetricsRequest) returns (ReportMetricsResponse);
+  rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
+
+  // ========== 事件 ==========
   rpc PublishEvent(PublishEventRequest) returns (PublishEventResponse);
   rpc SubscribeEvent(SubscribeEventRequest) returns (stream EventMessage);
-  
-  // 指标
-  rpc GetMetrics(google.protobuf.Empty) returns (MetricsResponse);
 }
 
-// ========== 服务注册 ==========
+// ==================== 服务注册 ====================
 
 message RegisterRequest {
   string service_name = 1;
@@ -50,21 +54,81 @@ message DeregisterResponse {
   string error = 2;
 }
 
-// ========== 健康检查 ==========
+// ==================== 健康检查 ====================
+
+message ReportHealthRequest {
+  string service_name = 1;
+  
+  // 健康状态: healthy, unhealthy, degraded
+  string status = 2;
+  
+  // 各项检查结果
+  // key: 检查项名称（如 database, redis）
+  // value: "ok" 或错误信息
+  map<string, string> checks = 3;
+}
+
+message ReportHealthResponse {
+  bool success = 1;
+}
 
 message HealthResponse {
+  // 聚合后的健康状态
   string status = 1;  // healthy, unhealthy, degraded
+  
   google.protobuf.Timestamp timestamp = 2;
-  map<string, string> errors = 3;
+  
+  // 各服务的健康状态
+  map<string, ServiceHealth> services = 3;
+}
+
+message ServiceHealth {
+  string status = 1;
+  map<string, string> checks = 2;
+  google.protobuf.Timestamp last_report = 3;
 }
 
 message ReadinessResponse {
   bool ready = 1;
   google.protobuf.Timestamp timestamp = 2;
-  map<string, string> errors = 3;
+  map<string, bool> services = 3;
 }
 
-// ========== 事件 ==========
+// ==================== 指标上报 ====================
+
+message ReportMetricsRequest {
+  string service_name = 1;
+  repeated Metric metrics = 2;
+}
+
+message Metric {
+  // 指标名称
+  string name = 1;
+  
+  // 指标类型: counter, gauge, histogram, summary
+  string type = 2;
+  
+  // 指标值
+  double value = 3;
+  
+  // 标签
+  map<string, string> labels = 4;
+  
+  // 帮助信息
+  string help = 5;
+}
+
+message ReportMetricsResponse {
+  bool success = 1;
+}
+
+message MetricsResponse {
+  // Prometheus 格式的指标文本
+  string content = 1;
+  string content_type = 2;
+}
+
+// ==================== 事件 ====================
 
 message PublishEventRequest {
   string subject = 1;
@@ -87,11 +151,4 @@ message EventMessage {
   bytes data = 2;
   map<string, string> headers = 3;
   string message_id = 4;
-}
-
-// ========== 指标 ==========
-
-message MetricsResponse {
-  string content = 1;
-  string content_type = 2;
 }
