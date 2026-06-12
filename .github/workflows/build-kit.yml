@@ -1,20 +1,20 @@
-name: Build and Push Docker Image
+name: Build Kit Sidecar
 
 on:
   push:
     branches: [master]
     paths:
-      - 'Dockerfile.base'
-      - 'cmd/**'
-      - 'internal/**'
+      - 'cmd/kitd/**'
+      - 'internal/kit/**'
       - 'go.mod'
       - 'go.sum'
+      - 'Dockerfile.kit'
   workflow_dispatch:
 
 env:
   REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
   NAMESPACE: ${{ secrets.ALIYUN_NAMESPACE }}
-  IMAGE_NAME: novaai-kit
+  IMAGE_NAME: platform-kit
 
 jobs:
   build-and-push:
@@ -39,7 +39,6 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          # 获取最新 tag
           VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "short=${VERSION#v}" >> $GITHUB_OUTPUT
@@ -48,11 +47,10 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.base
+          file: ./Dockerfile.kit
           push: true
           tags: |
             ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
             ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-            ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.short }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
